@@ -1,12 +1,27 @@
+import os
 import sqlite3
+import threading
 from datetime import datetime, timedelta
+from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# === अपनी डिटेल्स यहाँ डालें ===
+# === अपनी डिटेल्स डालें ===
 BOT_TOKEN = "8689544065:AAEaouAETJKUte9SRuYa1zx0iNtNsKxcrrs"
 YOUR_CHAT_ID = 874753114
 
+# --- डमी वेब सर्वर ताकि Render टाइमआउट न करे ---
+app_server = Flask(__name__)
+
+@app_server.route('/')
+def home():
+    return "Bot is running 24/7!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app_server.run(host="0.0.0.0", port=port)
+
+# --- डेटाबेस सेटअप ---
 def init_db():
     conn = sqlite3.connect("tracker.db")
     cursor = conn.cursor()
@@ -29,6 +44,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+# --- बोट कमांड्स ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "नमस्ते! आपका टारगेट ट्रैकर बोट तैयार है।\n\n"
@@ -163,14 +179,22 @@ async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(report, parse_mode="Markdown")
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    print(f"Exception while handling an update: {context.error}")
+
 def main():
     init_db()
+
+    # बैकग्राउंड में वेब सर्वर चालू करें (Render के पोर्ट बाइंडिंग के लिए)
+    threading.Thread(target=run_web, daemon=True).start()
+
     builder = ApplicationBuilder()
     builder = builder.token(BOT_TOKEN)
     builder = builder.connect_timeout(30.0)
     builder = builder.read_timeout(30.0)
     app = builder.build()
 
+    app.add_error_handler(error_handler)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add", add_task))
     app.add_handler(CommandHandler("tasks", list_tasks))
@@ -179,7 +203,7 @@ def main():
     app.add_handler(CommandHandler("reading", get_reading))
     app.add_handler(CommandHandler("report", weekly_report))
 
-    print("बॉट चालू हो चुका है... (Testing mode)")
+    print("बॉट चालू हो चुका है...")
     app.run_polling()
 
 if __name__ == "__main__":
